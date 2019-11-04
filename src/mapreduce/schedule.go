@@ -1,6 +1,10 @@
 package mapreduce
 
-import "fmt"
+import (
+	"fmt"
+	"log"
+	"sync"
+)
 
 //
 // schedule() starts and waits for all tasks in the given phase (mapPhase
@@ -24,6 +28,59 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	}
 
 	fmt.Printf("Schedule: %v %v tasks (%d I/Os)\n", ntasks, phase, n_other)
+
+	if phase == mapPhase {
+		var waitGroup sync.WaitGroup
+
+		waitGroup.Add(ntasks)
+		log.Println("waitGroup=", waitGroup)
+
+		for i := 0; i < ntasks; i++ {
+			select {
+			case workerAddr := <-registerChan:
+				go func(idx int, waitGroup *sync.WaitGroup) {
+					call(workerAddr, "Worker.DoTask", DoTaskArgs{
+						JobName:       jobName,
+						File:          mapFiles[idx],
+						Phase:         mapPhase,
+						TaskNumber:    idx,
+						NumOtherPhase: n_other,
+					}, nil)
+					registerChan <- workerAddr
+					waitGroup.Done()
+				}(i, &waitGroup)
+			}
+		}
+
+		log.Println("before wait...")
+		log.Println("waitGroup=", waitGroup)
+		waitGroup.Wait()
+		log.Println("after wait...")
+	} else {
+		var waitGroup sync.WaitGroup
+
+		waitGroup.Add(ntasks)
+		log.Println("waitGroup=", waitGroup)
+
+		for i := 0; i < ntasks; i++ {
+			select {
+			case workerAddr := <-registerChan:
+				go func(idx int, waitGroup *sync.WaitGroup) {
+					call(workerAddr, "Worker.DoTask", DoTaskArgs{
+						JobName:       jobName,
+						File:          "",
+						Phase:         reducePhase,
+						TaskNumber:    idx,
+						NumOtherPhase: n_other,
+					}, nil)
+					registerChan <- workerAddr
+					waitGroup.Done()
+				}(i, &waitGroup)
+			}
+		}
+
+		waitGroup.Wait()
+	}
 
 	// All ntasks tasks have to be scheduled on workers. Once all tasks
 	// have completed successfully, schedule() should return.
