@@ -3,6 +3,9 @@ package mapreduce
 import (
 	"hash/fnv"
 	"io/ioutil"
+	"log"
+	"os"
+	"encoding/json"
 )
 
 func doMap(
@@ -56,16 +59,16 @@ func doMap(
 	//
 	content, err := ioutil.ReadFile(inFile)
 	if err != nil {
-		log.Println("open file error, err=", err);
+		log.Fatal("open file error, err=", err);
 	}
 	kvs := mapF(inFile, string(content));
 
 	files := make([]*os.File, nReduce)
 
 	for i := 0; i < nReduce; i++ {
-		files[i], err = os.Open(reduceName(jobName, mapTask, i))
+		files[i], err = os.OpenFile(reduceName(jobName, mapTask, i), os.O_CREATE | os.O_RDWR, 0666)
 		if err != nil {
-			log.Println("open file error, err=", err)
+			log.Fatal("open file error, err=", err)
 		}
 	}
 

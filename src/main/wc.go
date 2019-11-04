@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"mapreduce"
 	"os"
+	"strconv"
+	"unicode"
 )
 
 //
@@ -15,6 +17,38 @@ import (
 //
 func mapF(filename string, contents string) []mapreduce.KeyValue {
 	// Your code here (Part II).
+	var startIdx = 0
+	var kvs = make([]mapreduce.KeyValue, 0)
+	var runeArray = []rune(contents)
+
+	for i := 0; i < len(runeArray); {
+		// skip not letter
+		for ; i < len(runeArray); {
+			if unicode.IsLetter(runeArray[i]) {
+				startIdx = i
+				break
+			} else {
+				i++
+			}
+		}
+
+		for ; i < len(runeArray); {
+			if unicode.IsLetter(runeArray[i]) {
+				i++
+			} else if !unicode.IsLetter(runeArray[i]) {
+				if startIdx < i {
+					kvs = append(kvs, mapreduce.KeyValue{
+						Key:   string(runeArray[startIdx:i]),
+						Value: "1",
+					})
+				}
+				break
+			}
+		}
+
+	}
+
+	return kvs
 }
 
 //
@@ -24,6 +58,14 @@ func mapF(filename string, contents string) []mapreduce.KeyValue {
 //
 func reduceF(key string, values []string) string {
 	// Your code here (Part II).
+	var totalCount = 0
+
+	for _, value := range values {
+		count, _ := strconv.Atoi(value)
+		totalCount += count
+	}
+
+	return strconv.Itoa(totalCount)
 }
 
 // Can be run in 3 ways:
