@@ -2,8 +2,9 @@ package mapreduce
 
 import (
 	"fmt"
-	"log"
-	"sync"
+	// "log"
+	// "sync"
+	// "time"
 )
 
 //
@@ -26,60 +27,111 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 		ntasks = nReduce
 		n_other = len(mapFiles)
 	}
+	var workChan = make(chan int, ntasks)
+	var successChan = make(chan int, ntasks)
+	var failChan = make(chan int, ntasks)
 
 	fmt.Printf("Schedule: %v %v tasks (%d I/Os)\n", ntasks, phase, n_other)
 
+	for i := 0; i < ntasks; i++ {
+		workChan <- i
+	}
+
 	if phase == mapPhase {
-		var waitGroup sync.WaitGroup
+		// var waitGroup sync.WaitGroup
 
-		waitGroup.Add(ntasks)
-		log.Println("waitGroup=", waitGroup)
+		// waitGroup.Add(ntasks)
 
-		for i := 0; i < ntasks; i++ {
+		var taskIdx int
+
+		for i := 0; i < ntasks; {
+			var finishFlag = false
+			select {
+			case taskIdx = <-workChan:
+			case taskIdx = <-failChan:
+			case taskIdx = <- successChan:
+				i++
+				finishFlag = true
+			}
+
+			if finishFlag {
+				continue
+			}
+
 			select {
 			case workerAddr := <-registerChan:
-				go func(idx int, waitGroup *sync.WaitGroup) {
-					call(workerAddr, "Worker.DoTask", DoTaskArgs{
+				go func(idx int) {
+					// log.Println("begin idx=", idx)
+					ret := call(workerAddr, "Worker.DoTask", DoTaskArgs{
 						JobName:       jobName,
 						File:          mapFiles[idx],
 						Phase:         mapPhase,
 						TaskNumber:    idx,
 						NumOtherPhase: n_other,
 					}, nil)
+
+					if ret {
+						successChan <- idx
+					} else {
+						failChan <- idx
+					}
+
 					registerChan <- workerAddr
-					waitGroup.Done()
-				}(i, &waitGroup)
+				}(taskIdx)
 			}
 		}
 
-		log.Println("before wait...")
-		log.Println("waitGroup=", waitGroup)
-		waitGroup.Wait()
-		log.Println("after wait...")
+		// time.Sleep(3 * time.Second)
+
+		// log.Println("before wait...")
+		// log.Println("waitGroup=", waitGroup)
+		// waitGroup.Wait()
+		// log.Println("after wait...")
 	} else {
-		var waitGroup sync.WaitGroup
+		// var waitGroup sync.WaitGroup
+		var taskIdx int
 
-		waitGroup.Add(ntasks)
-		log.Println("waitGroup=", waitGroup)
+		// waitGroup.Add(ntasks)
 
-		for i := 0; i < ntasks; i++ {
+		for i := 0; i < ntasks; {
+			var finishFlag = false
+			select {
+			case taskIdx = <-workChan:
+			case taskIdx = <-failChan:
+			case taskIdx = <- successChan:
+				i++
+				finishFlag = true
+			}
+
+			if finishFlag {
+				continue
+			}
+
 			select {
 			case workerAddr := <-registerChan:
-				go func(idx int, waitGroup *sync.WaitGroup) {
-					call(workerAddr, "Worker.DoTask", DoTaskArgs{
+				go func(idx int) {
+					ret := call(workerAddr, "Worker.DoTask", DoTaskArgs{
 						JobName:       jobName,
 						File:          "",
 						Phase:         reducePhase,
 						TaskNumber:    idx,
 						NumOtherPhase: n_other,
 					}, nil)
+					// waitGroup.Done()
+
+					if ret {
+						successChan <- idx
+					} else {
+						failChan <- idx
+					}
+
 					registerChan <- workerAddr
-					waitGroup.Done()
-				}(i, &waitGroup)
+					// log.Println("idx=", idx, ", down waitGroup=", waitGroup)
+				}(taskIdx)
 			}
 		}
 
-		waitGroup.Wait()
+		// waitGroup.Wait()
 	}
 
 	// All ntasks tasks have to be scheduled on workers. Once all tasks
